@@ -14,6 +14,7 @@ import (
 	"github.com/gicmo/PiCo/hue"
 )
 
+
 func main() {
 	fmt.Println("PiCo")
 
@@ -50,42 +51,62 @@ func main() {
 	btn.ActiveLow(false)
 
 	pressed := make(chan time.Time, 2)
-	err = btn.Watch(embd.EdgeFalling, func(btn embd.DigitalPin) {
+	err = btn.Watch(embd.EdgeBoth, func(btn embd.DigitalPin) {
 		pressed <- time.Now()
 	})
+
+	bs, _ := btn.Read()
+	fmt.Printf("[D] Button state: %v\n", bs)
 
 	onoff := embd.High
 	pin18.Write(onoff)
 
 	last_button := time.Unix(0, 0)
-
 	ctchan := make(chan error, 2)
+	bc := make(chan int, 1)
+	busy := false
 
 loop:
 	for {
 		select {
 		case pressed_time := <-pressed:
+			bs, _ = btn.Read()
+			fmt.Printf("[D] B: %v\n", bs)
 			duration := pressed_time.Sub(last_button)
-			if duration > 500*time.Millisecond {
+			if !busy && duration > 500*time.Millisecond {
+				fmt.Printf("[D] Key pressed [starting timer]\n")
 				last_button = pressed_time
+				busy = true
 				pin18.Write(embd.Low)
 
+				time.AfterFunc(200*time.Millisecond, func() {
+					if state, berr := btn.Read(); berr != nil {
+						fmt.Printf("[E] Button read error\n")
+						bc <- 0
+					} else {
+						bc <- state
+					}
+				})
+			}
+
+		case bstate := <-bc:
+			fmt.Printf("[D] Timer report: %v\n", bstate)
+			if bstate != 0 {
 				go func(clt *hue.Client, ch chan error) {
 					herr := client.Toggle()
 					ch <- herr
 				}(&client, ctchan)
-
 			}
 
 		case sig := <-sigch:
-			fmt.Println("Got signal", sig)
+			fmt.Println("[I] Got signal", sig)
 			break loop
 
 		case err = <-ctchan:
 			if err != nil {
-
+				fmt.Printf("[W] toggle: %v", err)
 			}
-
+			busy = false
 			pin18.Write(embd.High)
 		}
 	}
