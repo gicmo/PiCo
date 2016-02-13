@@ -96,6 +96,8 @@ loop:
 					herr := client.Toggle()
 					ch <- herr
 				}(&client, ctchan)
+			} else {
+				ctchan <- nil
 			}
 
 		case sig := <-sigch:
@@ -106,6 +108,8 @@ loop:
 			if err != nil {
 				fmt.Printf("[W] toggle: %v", err)
 			}
+
+			fmt.Println("[D] back to standby (busy = false)")
 			busy = false
 			pin18.Write(embd.High)
 		}
